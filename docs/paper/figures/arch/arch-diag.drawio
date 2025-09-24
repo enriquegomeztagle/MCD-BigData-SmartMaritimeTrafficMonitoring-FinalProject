@@ -1,0 +1,66 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="pipelineAIS" name="Arquitectura E2E">
+    <mxGraphModel dx="1280" dy="720" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        
+        <!-- VM -->
+        <mxCell id="vm" value="Google Compute Engine VM&#xa;(Scraping + Streamlit)" style="shape=image;image=https://cdn.draw.io/icons/gcp/compute-engine.svg;" vertex="1" parent="1">
+          <mxGeometry x="40" y="160" width="160" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Storage -->
+        <mxCell id="gcs" value="Google Cloud Storage&#xa;Capas: raw / curated&#xa;Particiones YYYY-MM=" style="shape=image;image=https://cdn.draw.io/icons/gcp/cloud-storage.svg;" vertex="1" parent="1">
+          <mxGeometry x="280" y="160" width="200" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Dataproc -->
+        <mxCell id="dataproc" value="Cluster DataProc&#xa;- Job raw (descomprime + parquet)&#xa;- Job curated (transforma)" style="shape=image;image=https://cdn.draw.io/icons/gcp/dataproc.svg;" vertex="1" parent="1">
+          <mxGeometry x="540" y="140" width="200" height="120" as="geometry" />
+        </mxCell>
+        
+        <!-- Cloud Function -->
+        <mxCell id="cf" value="Cloud Function&#xa;(Crea dataset y tabla)" style="shape=image;image=https://cdn.draw.io/icons/gcp/cloud-functions.svg;" vertex="1" parent="1">
+          <mxGeometry x="800" y="160" width="160" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- BigQuery -->
+        <mxCell id="bq" value="BigQuery&#xa;(Consultas SQL optimizadas)" style="shape=image;image=https://cdn.draw.io/icons/gcp/bigquery.svg;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="160" width="160" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Streamlit -->
+        <mxCell id="streamlit" value="Dashboard Streamlit&#xa;(VM - mapas, tendencias, rankings)" style="shape=image;image=https://cdn.draw.io/icons/gcp/app-engine.svg;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="160" width="200" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Arrows -->
+        <mxCell id="vm-gcs" edge="1" parent="1" source="vm" target="gcs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="gcs-dataproc" edge="1" parent="1" source="gcs" target="dataproc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="dataproc-gcs" edge="1" parent="1" source="dataproc" target="gcs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="gcs-cf" edge="1" parent="1" source="gcs" target="cf">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cf-bq" edge="1" parent="1" source="cf" target="bq">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="bq-streamlit" edge="1" parent="1" source="bq" target="streamlit">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <!-- Region -->
+        <mxCell id="region" value="Región: us-central1&#xa;Clave dedupe: MMSI + timestamp" style="shape=note;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="540" y="300" width="250" height="80" as="geometry" />
+        </mxCell>
+        
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
