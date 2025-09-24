@@ -82,13 +82,17 @@ Toda la solución se ejecuta en la región \texttt{us-central1}. Para evitar dup
 \vspace{0.1cm}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\subsection{Limitaciones actuales de la solución} % REVISAR: KIKE
+\subsection{Limitaciones actuales de la solución}
+\label{subsec:limitaciones-solucion}
 
-Actualmente la solución no está implementada de manera completamente \textit{event-driven}. 
-El disparo de los diferentes procesos (por ejemplo, la ejecución de la Cloud Function tras la escritura en la capa \textbf{curated}) no se encuentra automatizado mediante eventos de GCS o Pub/Sub, 
-sino que requiere pasos manuales o ejecución programada. 
-Esto representa una limitación en términos de eficiencia y escalabilidad. 
-Como mejora futura se plantea migrar a un esquema \textbf{event-driven}, en el cual cada etapa del pipeline se active automáticamente al completarse la anterior, reduciendo la intervención manual y acelerando el flujo de datos de extremo a extremo.
+\begin{itemize}
+  \item \textbf{Sin orquestación event-driven.} Los disparadores son manuales o programados; la activación automática por eventos de GCS/Pub\,\/Sub o Workflows aún no está implementada. Migrar a un esquema event-driven reduciría intervención manual y tiempos de ciclo.
+  \item \textbf{Capacidad del clúster de DataProc.} Maestro \texttt{e2-standard-4} y cuatro trabajadores \texttt{e2-standard-2}. La ingesta/transformación se ejecuta \emph{gradual por mes o series de meses} (no por el año completo) para evitar \textit{spills}/\textit{OOM} y colas extensas, incrementando el tiempo de pared total.
+  \item \textbf{Throughput de E/S en GCS y muchos archivos pequeños.} La presencia de numerosos \texttt{.zip}/CSV implica listados/copias costosos y cuellos de botella de metadatos; el paralelismo se mantiene moderado para no topar cuotas.
+  \item \textbf{No tiempo real.} El pipeline es \textit{batch}; no hay ingesta en streaming ni SLA de latencia. El dashboard refleja cortes al cierre de cada corrida.
+  \item \textbf{Evolución de esquema limitada.} La Cloud Function crea tablas y puede autodetectar esquema, pero no hay un proceso formal de migraciones/versionado ni \textit{backfills} automatizados.
+  \item \textbf{Pruebas y monitoreo.} Podrían generarse alertas proactivas (Cloud Monitoring/Error Reporting) ante fallas o derivas.
+\end{itemize}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -103,27 +107,72 @@ De esta manera se asegura que la totalidad de los datos originales publicados po
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Preparación de datos} % REVISIÓN GUILLÉN
+En esta sección se describe el \textbf{qué} produce la preparación de datos (entradas, salidas y \emph{esquema}); la orquestación y operación del pipeline (el \textbf{cómo}) se documenta en la Sección~\ref{sec:metodologia}.
 
-La preparación de los datos comienza en una máquina virtual de Google Compute Engine, donde se ejecuta el script de scraping. Este proceso descarga en paralelo (con \textit{threads}) todos los archivos .zip hacia un directorio local (\texttt{ais\_2024}) y posteriormente los transfiere a Google Cloud Storage en la capa \textbf{raw}. 
+La preparación de los datos comienza en una máquina virtual de Google Compute Engine, donde se ejecuta el script de \textit{scraping}. Este proceso descarga en paralelo (con \textit{threads}) los archivos \texttt{.zip} hacia un directorio local (\texttt{ais\_2024}) y posteriormente los traslada a Google Cloud Storage en la capa \textbf{raw}.\\
 
-\paragraph{Resumen de etapas (alto nivel).}
-El pipeline de preparación contempla dos jobs en DataProc que operan sobre Cloud Storage:
+Dado el objetivo de tener un conjunto uniforme, trazable y listo para análisis, con: (i) esquema estandarizado, (ii) claves y derivadas temporales consistentes, (iii) coordenadas y velocidades normalizadas, y (iv) datos particionados por \texttt{ym} (AAAA-MM).
+
+\paragraph{Entradas $\rightarrow$ salidas por etapa y la salida de cada una.}
 \begin{enumerate}
-  \item \textbf{RAW\_INGEST} (ingesta a \textit{raw}): descomprime lotes \texttt{.zip} provenientes del scraping y los convierte a formato Parquet \emph{particionado por mes} (columna derivada \texttt{ym}), añadiendo trazabilidad mínima (archivo fuente y timestamp de ingesta).
-  \item \textbf{CURATED\_TRANSFORMATIONS} (hacia \textit{curated}): toma la salida \textit{raw} y aplica transformaciones básicas para dejar un esquema uniforme y listo para consumo analítico (normalizaciones de tipos, columnas temporales y desduplicación por \texttt{MMSI+BaseDateTime}).
+  \item \textbf{RAW INGESTION}: entrada = lotes \texttt{.zip} de NOAA; salida = archivos Parquet en \textbf{raw} \emph{particionados por \texttt{ym}}, con trazabilidad mínima (archivo fuente y timestamp de ingesta).
+  \item \textbf{CURATED TRANSFORMATIONS}: entrada = \textbf{raw}; salida = capa \textbf{curated} con tipos normalizados, derivados temporales y desduplicación por \texttt{MMSI+BaseDateTime}. Las reglas de limpieza y validaciones se detallan en la Sección~\ref{sec:cleaning}.
 \end{enumerate}
-Para mayor detalle, los detalles finos de limpieza, reglas y enriquecimientos revisar en la sección \textit{Limpieza y tratamiento de datos}.
 
-\paragraph{Automatización hacia BigQuery (Cloud Function).}
-Tras la generación de la capa \textbf{curated} en Cloud Storage, una Cloud Function automatiza la creación/verificación de \textbf{datasets} y \textbf{tablas} en BigQuery. Su lógica principal es idempotente:
-\begin{itemize}
-    \item Si la tabla ya existe, responde \texttt{action: none}.
-    \item Si no existe y no se proporcionó esquema, intenta \textbf{autodetectarlo} cargando una muestra desde \texttt{gcs\_uri}. Soporta formatos \textit{Parquet/CSV/JSON/Avro/ORC} y versiones comprimidas (\texttt{.gz/.bz2/.zst}).
-    \item Si se proporciona \texttt{schema}, crea la tabla con ese esquema explícito.
-\end{itemize}
-En la solución actual, esta función se integra al final del ETL, tras DataProc, para que la capa \textbf{curated} quede disponible en BigQuery lista para explotación y consumo por el dashboard.
+\paragraph{Modelo de datos de la capa \textit{curated}.}
+El Cuadro~\ref{tab:curated_schema} presenta los campos principales que expone la capa analítica.
+
+\begin{table}[H]
+  \centering
+  \caption{Esquema de la capa \textit{curated}.}
+  \label{tab:curated_schema}
+  \scriptsize
+  \begin{tabular}{@{}llp{8cm}@{}}
+  \toprule
+  Campo & Tipo & Descripción \\
+  \midrule
+  NavStatusInt & INTEGER & Representación entera del estado de navegación del buque. \\
+  MMSI & STRING & Número de Identidad del Servicio Móvil Marítimo del buque. \\
+  BaseDateTime & TIMESTAMP & Marca temporal que indica la fecha y hora del mensaje AIS. \\
+  LAT & FLOAT & Latitud de la posición del buque. \\
+  LON & FLOAT & Longitud de la posición del buque. \\
+  SOG & FLOAT & Velocidad sobre el fondo del buque en nudos. \\
+  COG & FLOAT & Rumbo sobre el fondo del buque en grados. \\
+  Heading & FLOAT & Rumbo de la proa del buque en grados. \\
+  VesselName & STRING & Nombre del buque. \\
+  IMO & STRING & Número de la Organización Marítima Internacional del buque. \\
+  CallSign & STRING & Indicativo de llamada por radio del buque. \\
+  VesselType & STRING & Tipo de buque. \\
+  Status & STRING & Estado del buque. \\
+  Length & FLOAT & Eslora del buque. \\
+  Width & FLOAT & Manga del buque. \\
+  Draft & FLOAT & Calado del buque. \\
+  Cargo & STRING & Tipo de carga que transporta el buque. \\
+  TransceiverClass & STRING & Clase del transpondedor AIS. \\
+  \_source\_file & STRING & Nombre del archivo fuente desde el cual se ingirieron los datos. \\
+  \_ingest\_ts & TIMESTAMP & Marca temporal que indica cuándo se ingirieron los datos en la tabla. \\
+  ymd & STRING & Fecha en formato año-mes-día. \\
+  VesselTypeInt & INTEGER & Representación entera del tipo de buque. \\
+  VesselTypeCode & STRING & Código que representa el tipo de buque. \\
+  VesselTypeName & STRING & Nombre del tipo de buque. \\
+  VesselTypeClass & STRING & Clasificación del tipo de buque. \\
+  NavStatusName & STRING & Nombre del estado de navegación del buque. \\
+  date & DATE & Fecha en que se registró el mensaje AIS. \\
+  hour & INTEGER & Hora del día en que se registró el mensaje AIS. \\
+  dow & STRING & Día de la semana en que se registró el mensaje AIS. \\
+  week & INTEGER & Semana del año en que se registró el mensaje AIS. \\
+  month & INTEGER & Mes en que se registró el mensaje AIS. \\
+  quarter & INTEGER & Trimestre del año en que se registró el mensaje AIS. \\
+  SOG\_ms & FLOAT & Velocidad sobre el fondo del buque en metros por segundo. \\
+  geohash9 & STRING & Representación geohash de la posición del buque con precisión de 9 caracteres. \\
+  \bottomrule
+  \end{tabular}
+\end{table}
+
+Una vez procesado, el resultado de este pipeline se publica en BigQuery como tabla particionada por \texttt{ym}, optimizada para consulta y consumo por el \textit{dashboard}. Los detalles de automatización de creación/carga (Cloud Function, idempotencia y autodetección de esquema) se abordan en la Sección~\ref{sec:metodologia}.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Limpieza y tratamiento de datos} % REVISIÓN GUILLÉN 
+\label{sec:cleaning}
 
 En esta sección se describen de manera detallada las transformaciones y criterios aplicados para convertir los datos AIS en una capa \textbf{curated} funcional para el análisis. Se listan los pasos con su \emph{porqué} operativo o estadístico.
 
@@ -180,22 +229,18 @@ En esta sección se describen de manera detallada las transformaciones y criteri
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Proceso de desarrollo}
 \subsection{Metodología} % REVISIÓN GUILLÉN 
+\label{sec:metodologia}
 
-La metodología seguida para el proyecto se basa en un pipeline de datos con varias etapas bien definidas. En la primera etapa, una VM en Google Compute Engine ejecuta el módulo de scraping, encargado de descargar automáticamente los archivos AIS de la NOAA y trasladarlos a la nube (Cloud Storage). 
-A partir de ahí, se desencadenan las siguientes fases: procesamiento con DataProc, almacenamiento en diferentes capas (raw y curated), carga a BigQuery y visualización con Streamlit. 
-De esta manera, la metodología integra la automatización de la recolección de datos como un paso fundamental previo al procesamiento distribuido.
-
+Esta sección cubre el \textbf{cómo} se ejecuta y opera el pipeline (orquestación, confiabilidad, despliegue y costos); las reglas de transformación y el esquema se tratan en las Secciones~\ref{sec:cleaning} y \ref{tab:curated_schema}.
 \paragraph{Proceso de desarrollo.}
 \begin{itemize}
-  \item \textbf{Orquestación y repetibilidad}: los jobs se ejecutan en DataProc con configuraciones de tolerancia a fallos (speculation, retries) y \emph{idempotencia} (partition overwrite dinámico + marcadores). Esto permite relanzar sin duplicar datos ni romper particiones.
-  \item \textbf{Particionado y costos}: todas las salidas en GCS se particionan por \texttt{ym} (AAAA-MM), lo que luego se refleja en BigQuery para escaneos selectivos y costos predecibles.
-  \item \textbf{Versionamiento de dependencias}: se distribuyen "wheels" (p.ej., \texttt{pygeohash}) y un entorno reproducible (tarball de venv) a los ejecutores vía \texttt{spark.yarn.dist.archives}, garantizando que las UDFs geoespaciales funcionen de forma consistente.
-  \item \textbf{Observabilidad}: se registran conteos globales y por día, así como tiempos de etapa, para detectar desviaciones (picos inusuales, lag IO). Los logs documentan causas de fallas y se retienen para auditoría.
-  \item \textbf{Publicación a BigQuery}: una vez escrita la capa \textit{curated}, la Cloud Function verifica/crea dataset y tabla en \texttt{us-central1} y, de ser necesario, autodetecta esquema a partir de una muestra en GCS, dejando la data lista para explotación por el dashboard Streamlit.
+  \item \textbf{Ejecución y calendarización}: actualmente los disparadores son manuales o programados; aún no se emplea un flujo completamente \emph{event-driven} (ver Sección~\ref{subsec:limitaciones-solucion}). 
+  \item \textbf{Orquestación y repetibilidad}: los jobs se ejecutan en DataProc con tolerancia a fallos (speculation, retries) e \emph{idempotencia} (sobrescritura controlada por partición y marcadores \texttt{\_SUCCESS}). Esto permite relanzar sin duplicados ni corrupción de particiones.
+  \item \textbf{Publicación a BigQuery}: una Cloud Function idempotente verifica/crea \textbf{datasets} y \textbf{tablas}; si no hay esquema, lo autodetecta a partir de una muestra en GCS. Su objetivo es que la capa \textit{curated} quede lista para consulta por el dashboard.
+  \item \textbf{Particionado y costos}: el diseño de partición por \texttt{ym}, permite escaneos selectivos y costos predecibles.
+  \item \textbf{Versionamiento de dependencias}: se distribuyen \textit{wheels} (p.ej., \texttt{pygeohash}) y un entorno reproducible (tarball del venv) a los ejecutores vía \texttt{spark.yarn.dist.archives}, asegurando UDFs consistentes.
+  \item \textbf{Observabilidad}: se registran conteos globales y por día, además de tiempos por etapa, para detectar desviaciones (picos inusuales, lag de E/S). Los logs documentan fallas y se retienen para auditoría.
 \end{itemize}
-
-\noindent\textit{Diferencia conceptual:} \textbf{Preparación de datos} resume \emph{qué} pasos iniciales se ejecutan (ingesta y preprocesos), mientras que \textbf{Proceso de desarrollo / Metodología} documenta \emph{cómo} se construye, ejecuta y asegura la calidad del pipeline (idempotencia, tolerancia a fallos, particionado, dependencias y publicación).
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Pruebas} % TODO: GUILLÉN
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
