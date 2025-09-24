@@ -55,7 +55,32 @@ Finalmente, los resultados se integraron en un \textit{dashboard} interactivo co
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Visión general del desarrollo} 
-\subsection{Solución Actual / visión general} % TODO: KIKE
+\subsection{Solución Actual / visión general} % REVISIÓN: GUILLÉN FALTA DOCUMENTAR ML 
+
+La solución actual se implementa de extremo a extremo sobre la nube de Google Cloud. El flujo completo es el siguiente:
+
+\begin{itemize}
+    \item Una máquina virtual en Google Compute Engine se encarga de \textbf{scrapear los datos AIS} y cargarlos en Google Cloud Storage. 
+    \item En Cloud Storage se organizan dos capas diferenciadas: \textit{raw} y \textit{curated}, con prefijos de carpeta y particiones por mes (\texttt{YYYY-MM=}).
+    \item Un clúster de Google Cloud DataProc ejecuta dos jobs:
+    \begin{itemize}
+        \item Job \textbf{raw}: descomprime los archivos obtenidos y organiza los datos en particiones por año y mes, y finalmente los guarda en formato Parquet en Google Cloud Storage.
+        \item Job \textbf{curated}: lee la capa cruda, aplica transformaciones iniciales y genera la capa refinada lista para análisis.
+    \end{itemize}
+    \item Una Cloud Function crea el \textbf{dataset y la tabla en BigQuery}, cargando la información desde la capa curated.
+    \item En BigQuery se centraliza la explotación de datos mediante consultas SQL optimizadas, generando los datasets finales que alimentan las visualizaciones.
+    \item El \textbf{dashboard de Streamlit}, desplegado en la misma VM, consume los resultados de BigQuery y presenta mapas, gráficos de tendencias y rankings de manera interactiva.
+\end{itemize}
+
+Toda la solución se ejecuta en la región \texttt{us-central1}. Para evitar duplicados en el flujo, se utiliza la clave compuesta \textbf{MMSI + timestamp}.
+
+% GUILLÉN: FALTA AÑADIR PARTE DE ML 
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=\textwidth]{img/arquitectura_e2e.png}
+%     \caption{Arquitectura actual de la solución: flujo end-to-end en Google Cloud.}
+% \end{figure}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Limitaciones actuales de la solución} % TODO: KIKE
@@ -82,7 +107,7 @@ Finalmente, los resultados se integraron en un \textit{dashboard} interactivo co
 \section{Resultados y conclusiones} % TODO: GUILLÉN
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{Código utilizado}
+\section{Código utilizado} % REVISAR: GUILLÉN 
 \subsection{Link al repositorio con código fuente y salidas correspondientes}
 \url{https://github.com/enriquegomeztagle/MCD-BigData-SmartMaritimeTrafficMonitoring-FinalProject}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
