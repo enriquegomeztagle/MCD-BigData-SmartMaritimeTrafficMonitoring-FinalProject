@@ -55,7 +55,7 @@ Finalmente, los resultados se integraron en un \textit{dashboard} interactivo co
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Visión general del desarrollo} 
-\subsection{Solución Actual / visión general} % REVISIÓN: GUILLÉN FALTA DOCUMENTAR ML 
+\subsection{Solución Actual / visión general} % GUILLÉN: FALTA AÑADIR PARTE DE ML tanto descripción como diagrama
 
 La solución actual se implementa de extremo a extremo sobre la nube de Google Cloud. El flujo completo es el siguiente:
 
@@ -73,14 +73,13 @@ La solución actual se implementa de extremo a extremo sobre la nube de Google C
 \end{itemize}
 
 Toda la solución se ejecuta en la región \texttt{us-central1}. Para evitar duplicados en el flujo, se utiliza la clave compuesta \textbf{MMSI + timestamp}.
-
-% GUILLÉN: FALTA AÑADIR PARTE DE ML 
-
-% \begin{figure}[H]
-%     \centering
-%     \includegraphics[width=\textwidth]{img/arquitectura_e2e.png}
-%     \caption{Arquitectura actual de la solución: flujo end-to-end en Google Cloud.}
-% \end{figure}
+\vspace{0.5cm}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{../figures/arch/ArchitectureDiagram.png}
+    \caption{Arquitectura actual de la solución: flujo end-to-end en Google Cloud.}
+\end{figure}
+\vspace{0.1cm}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Limitaciones actuales de la solución} % TODO: KIKE
