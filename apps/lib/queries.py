@@ -239,3 +239,32 @@ def velocidades_inusuales_query(start_date, end_date, vessel_types, percentile, 
     ORDER BY exceso DESC
     LIMIT {limit}
     """
+
+def velocidad_dia_semana_query(vessel_types):
+    """Generate velocidad por día de la semana query"""
+    table = get_table_name()
+    vessel_filter = build_vessel_filter(vessel_types)
+    
+    return f"""
+    WITH t AS (
+      SELECT
+        VesselTypeName,
+        FORMAT_DATE('%A', DATE(BaseDateTime)) AS dow,
+        EXTRACT(DAYOFWEEK FROM DATE(BaseDateTime)) AS dow_sun1,
+        SOG
+      FROM `{table}`
+      WHERE VesselTypeName IS NOT NULL
+      {vessel_filter}
+    )
+    SELECT
+      VesselTypeName,
+      dow,
+      AVG(SOG) AS avg_sog,
+      STDDEV_SAMP(SOG) AS sd_sog,
+      COUNT(*) AS n
+    FROM t
+    GROUP BY VesselTypeName, dow, dow_sun1
+    ORDER BY
+      VesselTypeName,
+      (MOD(dow_sun1 + 5, 7) + 1)
+    """
