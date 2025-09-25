@@ -62,7 +62,7 @@ La solución actual se implementa de extremo a extremo sobre la nube de Google C
 \begin{itemize}
     \item Una máquina virtual en Google Compute Engine se encarga de \textbf{scrapear los datos AIS} y cargarlos en Google Cloud Storage. 
     \item En Cloud Storage se organizan dos capas diferenciadas: \textit{raw} y \textit{curated}, con prefijos de carpeta y particiones por mes (\texttt{YYYY-MM=}).
-    \item Un clúster de Google Cloud DataProc ejecuta dos jobs:
+    \item Un clúster de Google Cloud DataProc (perfil \emph{high-memory}; véase Sección~\ref{sec:cluster}) ejecuta dos jobs, habilitando procesamientos por series de meses con menos derrames a disco y menor tiempo total:
     \begin{itemize}
         \item Job \textbf{raw}: descomprime los archivos obtenidos y organiza los datos en particiones por año y mes, y finalmente los guarda en formato Parquet en Google Cloud Storage.
         \item Job \textbf{curated}: lee la capa cruda, aplica transformaciones iniciales y genera la capa refinada lista para análisis.
@@ -72,7 +72,6 @@ La solución actual se implementa de extremo a extremo sobre la nube de Google C
     \item El \textbf{dashboard de Streamlit}, desplegado en la misma VM, consume los resultados de BigQuery y presenta mapas, gráficos de tendencias y rankings de manera interactiva.
 \end{itemize}
 
-Toda la solución se ejecuta en la región \texttt{us-central1}. Para evitar duplicados en el flujo, se utiliza la clave compuesta \textbf{MMSI + timestamp}.
 \vspace{0.5cm}
 \begin{figure}[H]
     \centering
@@ -87,8 +86,6 @@ Toda la solución se ejecuta en la región \texttt{us-central1}. Para evitar dup
 
 \begin{itemize}
   \item \textbf{Sin orquestación event-driven.} Los disparadores son manuales o programados; la activación automática por eventos de GCS/Pub\,\/Sub o Workflows aún no está implementada. Migrar a un esquema event-driven reduciría intervención manual y tiempos de ciclo.
-  \item \textbf{Capacidad del clúster de DataProc.} Maestro \texttt{e2-standard-4} y cuatro trabajadores \texttt{e2-standard-2}. La ingesta/transformación se ejecuta \emph{gradual por mes o series de meses} (no por el año completo) para evitar \textit{spills}/\textit{OOM} y colas extensas, incrementando el tiempo de pared total.
-  \item \textbf{Throughput de E/S en GCS y muchos archivos pequeños.} La presencia de numerosos \texttt{.zip}/CSV implica listados/copias costosos y cuellos de botella de metadatos; el paralelismo se mantiene moderado para no topar cuotas.
   \item \textbf{No tiempo real.} El pipeline es \textit{batch}; no hay ingesta en streaming ni SLA de latencia. El dashboard refleja cortes al cierre de cada corrida.
   \item \textbf{Evolución de esquema limitada.} La Cloud Function crea tablas y puede autodetectar esquema, pero no hay un proceso formal de migraciones/versionado ni \textit{backfills} automatizados.
   \item \textbf{Pruebas y monitoreo.} Podrían generarse alertas proactivas (Cloud Monitoring/Error Reporting) ante fallas o derivas.
@@ -241,6 +238,29 @@ Esta sección cubre el \textbf{cómo} se ejecuta y opera el pipeline (orquestaci
   \item \textbf{Versionamiento de dependencias}: se distribuyen \textit{wheels} (p.ej., \texttt{pygeohash}) y un entorno reproducible (tarball del venv) a los ejecutores vía \texttt{spark.yarn.dist.archives}, asegurando UDFs consistentes.
   \item \textbf{Observabilidad}: se registran conteos globales y por día, además de tiempos por etapa, para detectar desviaciones (picos inusuales, lag de E/S). Los logs documentan fallas y se retienen para auditoría.
 \end{itemize}
+
+\paragraph{Configuración del clúster (DataProc).}\label{sec:cluster}
+La capacidad de cómputo y la configuración actual del clúster es:
+
+\begin{table}[H]
+  \centering
+  \caption{Tamaño del clúster de DataProc y características de nodos.}
+  \scriptsize
+  \begin{tabular}{@{}lllll@{}}
+    \toprule
+    Rol & Tipo & vCPU & Memoria \\
+    \midrule
+    Maestro & e2-highmem-4 & 4 & 32 GB \\
+    Trabajador & e2-highmem-2 & 2 & 16 GB \\
+    Trabajador & e2-highmem-2 & 2 & 16 GB \\
+    Trabajador & e2-highmem-2 & 2 & 16 GB \\
+    Trabajador & e2-highmem-2 & 2 & 16 GB \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Optimización y diferenciador.}
+La configuración \emph{high-memory} actual mitiga la restricción operativa de procesar estrictamente mes a mes: ahora es posible ejecutar ventanas de \emph{series de meses} más amplias con menor probabilidad de \textit{spills}/OOM y menos corridas totales. No modifica la arquitectura, pero sí incrementa la capacidad efectiva del pipeline y mejora el tiempo de pared global.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Pruebas} % TODO: GUILLÉN
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
