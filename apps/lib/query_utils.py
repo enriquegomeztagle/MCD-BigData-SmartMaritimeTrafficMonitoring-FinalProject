@@ -12,7 +12,8 @@ def build_date_filter(start_date, end_date, date_column="BaseDateTime"):
 def build_vessel_filter(vessel_types, column="VesselTypeName"):
     if not vessel_types:
         return ""
-    vessel_list = "', '".join(vessel_types)
+    normalized_types = [("None" if vt is None else str(vt)) for vt in vessel_types]
+    vessel_list = "', '".join(normalized_types)
     return f"AND {column} IN ('{vessel_list}')"
 
 
