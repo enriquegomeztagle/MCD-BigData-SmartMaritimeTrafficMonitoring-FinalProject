@@ -1,24 +1,25 @@
 import streamlit as st
-from lib.bq import run_query_df, distinct_values
+from lib.bq import run_query_df, distinct_values, get_default_dates
+from lib.queries import variabilidad_query
 from lib.ui import chart_bar
 
 st.header("Variabilidad de velocidad y rumbo por tipo")
 
-start = st.date_input("Desde", value=None)
-end = st.date_input("Hasta", value=None)
+default_start, default_end = get_default_dates()
+
+start = st.date_input("Desde", value=default_start)
+end = st.date_input("Hasta", value=default_end)
 vtypes = st.multiselect("Tipos de buque", options=distinct_values("VesselTypeName"))
 min_n = st.number_input("Mín. muestras por tipo", 10, 100000, 100)
 
-params = {
-    "start_date": str(start) if start else None,
-    "end_date": str(end) if end else None,
-    "vessel_types": vtypes,
-    "min_n": int(min_n),
-}
-
-sql = open("sql/variabilidad_vel_rumbo.sql", "r", encoding="utf-8").read()
-df = run_query_df(sql, params)
+sql = variabilidad_query(start, end, vtypes, min_n)
+df = run_query_df(sql)
 
 st.dataframe(df, use_container_width=True)
 if not df.empty:
-    chart_bar(df, x="VesselTypeName:N", y="sd_sog:Q", title="Desv. estándar SOG (↑ = más variable)")
+    chart_bar(
+        df,
+        x="VesselTypeName",
+        y="sd_sog",
+        title="Desv. estándar SOG (↑ = más variable)",
+    )
