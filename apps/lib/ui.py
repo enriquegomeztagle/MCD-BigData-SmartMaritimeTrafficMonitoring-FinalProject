@@ -1,43 +1,39 @@
-from __future__ import annotations
 import streamlit as st
-import pandas as pd
-import altair as alt
+import plotly.express as px
+import geohash
+from lib.bq import distinct_values
 
-# Defaults comunes
-DEFAULT_LIMIT = 200
-
-
-def mmsi_multiselect(key: str = "mmsi") -> list[int]:
-    txt = st.text_input("MMSI (coma‑separados)", key=key, placeholder="e.g., 351234000, 224567890")
-    if not txt.strip():
-        return []
-    vals = []
-    for token in txt.replace("\n", ",").split(","):
-        token = token.strip()
-        if token.isdigit():
-            vals.append(int(token))
-    return vals
+DEFAULT_LIMIT = 100
 
 
-def chart_bar(df: pd.DataFrame, x: str, y: str, color: str | None = None, title: str | None = None):
-    chart = alt.Chart(df).mark_bar().encode(
-        x=alt.X(x, sort='-y'),
-        y=y,
-        color=color
-    )
-    if title:
-        chart = chart.properties(title=title)
-    st.altair_chart(chart, use_container_width=True)
+def chart_bar(df, x, y, title="Bar Chart", color=None):
+    fig = px.bar(df, x=x, y=y, color=color, title=title)
+    st.plotly_chart(fig, use_container_width=True)
 
 
-def chart_scatter(df: pd.DataFrame, x: str, y: str, color: str | None = None, size: str | None = None, title: str | None = None):
-    chart = alt.Chart(df).mark_circle(opacity=0.6).encode(
-        x=x,
-        y=y,
-        color=color if color else alt.value("#1f77b4"),
-        size=size if size else alt.value(40),
-        tooltip=list(df.columns)
-    )
-    if title:
-        chart = chart.properties(title=title)
-    st.altair_chart(chart, use_container_width=True)
+def mmsi_multiselect(label="MMSI", key=None):
+    return st.multiselect(label, options=distinct_values("MMSI"), key=key)
+
+
+def show_geohash_map(df, geohash_column="geohash9", title="Mapa de eventos"):
+    if df.empty or geohash_column not in df.columns:
+        return
+
+    st.subheader(title)
+
+    def decode_geohash(gh):
+        try:
+            return geohash.decode(gh)
+        except:
+            return None, None
+
+    coords = df[geohash_column].apply(decode_geohash)
+    df["lat"] = [coord[0] for coord in coords]
+    df["lon"] = [coord[1] for coord in coords]
+
+    map_df = df.dropna(subset=["lat", "lon"])
+
+    if not map_df.empty:
+        st.map(map_df[["lat", "lon"]])
+    else:
+        st.warning("No se pudieron decodificar las coordenadas geohash")
