@@ -3,7 +3,7 @@ from lib.bq import run_query_df, distinct_values, get_default_dates
 from lib.queries import eslora_manga_query
 from lib.ui import chart_bar
 
-st.header("Eslora–Manga: correlación por clase")
+st.header("Eslora-Manga: correlación por clase")
 
 default_start, default_end = get_default_dates()
 
