@@ -8,7 +8,7 @@ DEFAULT_LIMIT = 100
 
 def chart_bar(df, x, y, title="Bar Chart", color=None):
     fig = px.bar(df, x=x, y=y, color=color, title=title)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, config={"responsive": True})
 
 
 def mmsi_multiselect(label="MMSI", key=None):
