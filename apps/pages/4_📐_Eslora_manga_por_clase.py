@@ -15,7 +15,7 @@ min_n = st.number_input("Mín. muestras por clase", 10, 100000, 100)
 sql = eslora_manga_query(start, end, classes, min_n)
 df = run_query_df(sql)
 
-st.dataframe(df, use_container_width=True)
+st.dataframe(df, width="stretch")
 if not df.empty:
     chart_bar(
         df, x="VesselTypeClass", y="corr_len_width", title="Correlación Eslora vs Manga"

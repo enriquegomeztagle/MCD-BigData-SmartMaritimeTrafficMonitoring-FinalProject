@@ -23,4 +23,4 @@ sql = resumen_estado_query(start, end, statuses)
 df = run_query_df(sql)
 
 st.subheader("Resumen por estado")
-st.dataframe(df, use_container_width=True)
+st.dataframe(df, width="stretch")

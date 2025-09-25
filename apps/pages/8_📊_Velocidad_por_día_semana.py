@@ -21,7 +21,7 @@ if not df.empty:
         title="Velocidad promedio por día de la semana",
         labels={"dow": "Día", "avg_sog": "SOG promedio"},
     )
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, config={"responsive": True})
 
     fig2 = px.line(
         df,
@@ -30,4 +30,4 @@ if not df.empty:
         color="VesselTypeName",
         title="Tendencia semanal de velocidad",
     )
-    st.plotly_chart(fig2, width="stretch")
+    st.plotly_chart(fig2, config={"responsive": True})

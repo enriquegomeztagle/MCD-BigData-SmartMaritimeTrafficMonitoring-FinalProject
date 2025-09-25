@@ -21,7 +21,7 @@ limit = st.number_input("Límite", 50, 5000, DEFAULT_LIMIT, step=50)
 sql = calado_anomalo_query(start, end, vtypes, z_min, limit)
 df = run_query_df(sql)
 
-st.dataframe(df, use_container_width=True)
+st.dataframe(df, width="stretch")
 if not df.empty:
     chart_bar(
         df, x="MMSI", y="z", color="VesselTypeName", title="Z-score de calado por MMSI"

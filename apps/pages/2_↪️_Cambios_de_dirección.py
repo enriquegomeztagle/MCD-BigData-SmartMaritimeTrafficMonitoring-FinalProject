@@ -27,5 +27,5 @@ bbox_filter = build_bbox_filter(lat_min, lat_max, lon_min, lon_max, use_bbox)
 sql = cambios_direccion_query(start_date, end_date, mmsi, min_delta, bbox_filter, limit)
 df = run_query_df(sql)
 
-st.dataframe(df, use_container_width=True)
+st.dataframe(df, width="stretch")
 show_geohash_map(df)

@@ -16,7 +16,7 @@ limit = st.number_input("Límite", 50, 5000, DEFAULT_LIMIT, step=50)
 sql = velocidades_inusuales_query(start, end, vtypes, p, limit)
 df = run_query_df(sql)
 
-st.dataframe(df, use_container_width=True)
+st.dataframe(df, width="stretch")
 if not df.empty:
     chart_bar(
         df,

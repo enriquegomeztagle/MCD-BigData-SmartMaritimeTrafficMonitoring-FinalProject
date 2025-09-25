@@ -15,7 +15,7 @@ min_n = st.number_input("Mín. muestras por tipo", 10, 100000, 100)
 sql = variabilidad_query(start, end, vtypes, min_n)
 df = run_query_df(sql)
 
-st.dataframe(df, use_container_width=True)
+st.dataframe(df, width="stretch")
 if not df.empty:
     chart_bar(
         df,
