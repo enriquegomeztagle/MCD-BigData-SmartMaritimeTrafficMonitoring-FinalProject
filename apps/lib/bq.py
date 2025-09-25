@@ -4,6 +4,9 @@ import os
 import streamlit as st
 from datetime import datetime, timedelta
 import pytz
+import warnings
+
+warnings.filterwarnings("ignore", message="BigQuery Storage module not found")
 
 if "GCP_KEYFILE_PATH" in st.secrets:
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = st.secrets["GCP_KEYFILE_PATH"]
