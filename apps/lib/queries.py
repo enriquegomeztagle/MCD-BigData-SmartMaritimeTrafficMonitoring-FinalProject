@@ -3,6 +3,7 @@ from .query_utils import (
     build_date_filter,
     build_vessel_filter,
     build_mmsi_filter,
+    get_model_dataset
 )
 
 
@@ -315,4 +316,181 @@ def estado_frecuente_semanal_query(vessel_types):
     ORDER BY
       VesselTypeName,
       (MOD(dow_sun1 + 5, 7) + 1)
+    """
+
+
+# --- Anomaly detection builders ------------------------------------------------
+
+
+def _get_model_name(metric: str, id_col: str, freq: str) -> str:
+    """
+    Nombre completamente calificado del modelo en el dataset definido.
+    """
+    def sanitize(name: str) -> str:
+        return ''.join(ch.lower() if ch.isalnum() else '_' for ch in name)
+
+    model_ds = get_model_dataset()  # e.g. river-treat-468823.dataset_AIS_2024_silver_refined
+    model_name = f"anomaly_{sanitize(metric)}_{sanitize(id_col)}_{sanitize(freq)}"
+    return f"{model_ds}.{model_name}"
+
+
+def anomaly_train_query(
+    start_date,
+    end_date,
+    vessel_types,
+    metric,
+    freq = "HOURLY",
+    id_col = "geohash9",
+    horizon = 1,
+) -> str:
+    """Build a BigQuery ML query to train an ARIMA_PLUS anomaly model.
+
+    Parameters
+    ----------
+    start_date, end_date : str
+        Inclusive date range used to aggregate training data.
+    vessel_types : list[str] | None
+        Optional list of vessel types to filter on.
+    metric : str
+        Metric to model.  Accepted values are ``'count'`` for message
+        counts and ``'speed'`` for average speed.
+    freq : str, optional
+        Data frequency (``'HOURLY'`` or ``'DAILY'``).  Determines
+        ``TIMESTAMP_TRUNC`` granularity and model ``DATA_FREQUENCY``.
+    id_col : str, optional
+        Column used as series identifier (e.g. ``'geohash9'``,
+        ``'VesselTypeName'`` or ``'MMSI'``).
+    horizon : int, optional
+        Forecast horizon for the ARIMA model.  A value of 1 is typical
+        when the model is used solely for anomaly detection.
+
+    Returns
+    -------
+    str
+        A SQL string that trains (creates or replaces) the anomaly model.
+    """
+    table = get_table_name()
+    date_filter = build_date_filter(start_date, end_date)
+    vessel_filter = build_vessel_filter(vessel_types)
+    freq_upper = freq.upper()
+    if freq_upper == "HOURLY":
+        ts_expr = "TIMESTAMP_TRUNC(BaseDateTime, HOUR)"
+    elif freq_upper == "DAILY":
+        ts_expr = "TIMESTAMP_TRUNC(BaseDateTime, DAY)"
+    else:
+        raise ValueError("freq must be 'HOURLY' or 'DAILY'")
+    # Determine metric expression and label for the aggregated value
+    metric_lower = metric.lower()
+    if metric_lower == "count":
+        metric_expr = "COUNT(*)"
+    elif metric_lower == "speed":
+        # Use speed over ground in knots.  Cast to FLOAT64 for accuracy.
+        metric_expr = "AVG(CAST(SOG AS FLOAT64))"
+    else:
+        raise ValueError("metric must be 'count' or 'speed'")
+    model_name = _get_model_name(metric_lower, id_col, freq_upper)
+    return f"""
+    CREATE OR REPLACE MODEL `{model_name}`
+    OPTIONS (
+      MODEL_TYPE = 'ARIMA_PLUS',
+      TIME_SERIES_TIMESTAMP_COL = 'ts_col',
+      TIME_SERIES_DATA_COL = 'value',
+      TIME_SERIES_ID_COL = 'series_id',
+      DATA_FREQUENCY = '{freq_upper}',
+      HORIZON = {horizon}
+    ) AS
+    SELECT
+      {id_col} AS series_id,
+      {ts_expr} AS ts_col,
+      {metric_expr} AS value
+    FROM `{table}`
+    WHERE {ts_expr} IS NOT NULL
+      {date_filter}
+      {vessel_filter}
+    GROUP BY series_id, ts_col
+    """
+
+
+def anomaly_predict_query(
+    start_date,
+    end_date,
+    vessel_types,
+    metric,
+    freq,
+    id_col,
+    threshold,
+) -> str:
+    """Build a query to detect anomalies using a trained model.
+
+    The query constructs an evaluation dataset with the same schema as
+    the training data and invokes ``ML.DETECT_ANOMALIES`` with a
+    user‑defined probability threshold.  It returns all fields from
+    ``ML.DETECT_ANOMALIES`` including ``is_anomaly`` and
+    ``anomaly_probability``.
+
+    Parameters
+    ----------
+    start_date, end_date : str
+        Inclusive date range for the evaluation dataset.
+    vessel_types : list[str] | None
+        Optional list of vessel types to filter on.
+    metric : str
+        Metric modelled in the training data (``'count'`` or ``'speed'``).
+    freq : str, optional
+        Data frequency (``'HOURLY'`` or ``'DAILY'``).  Must match the
+        frequency used during training.
+    id_col : str, optional
+        Series identifier column used during training.
+    threshold : float, optional
+        Probability threshold to flag anomalies.  Values closer to 1.0
+        reduce false positives.
+
+    Returns
+    -------
+    str
+        A SQL string that detects anomalies for the specified period.
+    """
+    table = get_table_name()
+    date_filter = build_date_filter(start_date, end_date)
+    vessel_filter = build_vessel_filter(vessel_types)
+    freq_upper = freq.upper()
+    if freq_upper == "HOURLY":
+        ts_expr = "TIMESTAMP_TRUNC(BaseDateTime, HOUR)"
+    elif freq_upper == "DAILY":
+        ts_expr = "TIMESTAMP_TRUNC(BaseDateTime, DAY)"
+    else:
+        raise ValueError("freq must be 'HOURLY' or 'DAILY'")
+    metric_lower = metric.lower()
+    if metric_lower == "count":
+        metric_expr = "COUNT(*)"
+    elif metric_lower == "speed":
+        metric_expr = "AVG(CAST(SOG AS FLOAT64))"
+    else:
+        raise ValueError("metric must be 'count' or 'speed'")
+    model_name = _get_model_name(metric_lower, id_col, freq_upper)
+    return f"""
+    SELECT
+      series_id,
+      ts_col,
+      value,
+      is_anomaly,
+      anomaly_probability,
+      lower_bound,
+      upper_bound
+    FROM ML.DETECT_ANOMALIES(
+      MODEL `{model_name}`,
+      STRUCT({threshold} AS anomaly_prob_threshold),
+      (
+        SELECT
+          {id_col} AS series_id,
+          {ts_expr} AS ts_col,
+          {metric_expr} AS value
+        FROM `{table}`
+        WHERE {ts_expr} IS NOT NULL
+          {date_filter}
+          {vessel_filter}
+        GROUP BY series_id, ts_col
+      )
+    )
+    ORDER BY anomaly_probability DESC
     """
