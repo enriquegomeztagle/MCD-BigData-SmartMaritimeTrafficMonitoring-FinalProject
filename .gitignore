@@ -212,5 +212,7 @@ docs/**
 !docs/**/
 !docs/**/*.tex
 !docs/**/*.pdf
+!docs/**/*.png
+!docs/**/*.jpeg
 river-treat-468823-m3-5c1dace0df38.json
 /.vscode
