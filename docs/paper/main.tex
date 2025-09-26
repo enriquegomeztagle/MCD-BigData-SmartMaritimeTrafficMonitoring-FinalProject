@@ -37,7 +37,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Resumen ejecutivo}
-\subsection{Introducción} % REVISIÓN GUILLÉN 
+\subsection{Introducción} 
 
 El tráfico marítimo global genera millones de registros de posicionamiento a través del Sistema de Identificación Automática (AIS), que transmite automáticamente la identidad, posición, velocidad y otros datos de los buques. Originalmente implementado para mejorar la seguridad de la navegación, hoy es crucial para la gestión del tráfico marítimo, la conciencia del entorno y operaciones de búsqueda y rescate.
 
@@ -55,7 +55,7 @@ Finalmente, los resultados se integraron en un \textit{dashboard} interactivo co
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Visión general del desarrollo} 
-\subsection{Solución Actual / visión general} % REVISIÓN GUILLÉN: FALTA AÑADIR PARTE DE ML tanto descripción como diagrama
+\subsection{Solución Actual / visión general} % TODO GUILLÉN: FALTA AÑADIR PARTE DE ML tanto descripción como diagrama
 
 La solución actual se implementa de extremo a extremo sobre la nube de Google Cloud. El flujo completo es el siguiente:
 
@@ -93,22 +93,80 @@ La solución actual se implementa de extremo a extremo sobre la nube de Google C
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\subsection{Propósito, uso y alcance de la herramienta} % TODO: GUILLÉN
+\subsection{Propósito, uso y alcance de la herramienta}
+\noindent\textbf{Propósito general.} La herramienta tiene como propósito transformar los mensajes AIS masivos en \textit{inteligencia operable} para seguridad y gestión del tráfico marítimo. Provee un flujo reproducible de ingesta, depuración, análisis y detección de anomalías que permita identificar comportamientos de riesgo (velocidades inusuales, cambios de rumbo bruscos, calados atípicos, derivas de patrones por zona/tipo de buque) y entregar hallazgos mediante un \textit{dashboard} interactivo.
+
+\vspace{0.2cm}
+\noindent\textbf{Objetivos específicos.}
+\begin{itemize}
+  \item \textbf{Monitoreo descriptivo y exploratorio:} caracterizar el comportamiento típico por tipo de embarcación (\textit{VesselTypeName}), zona (\texttt{geohash9}) y periodo (hora/día), incluyendo estados de navegación y métricas de velocidad/rumbo.
+  \item \textbf{Detección temprana de anomalías:} señalar observaciones que se desvían significativamente de los patrones normales (p.ej., \emph{z-scores} de calado, picos de velocidad, virajes abruptos) y, a nivel temporal, detectar valores atípicos con modelos ARIMA\_PLUS en BigQuery ML.
+  \item \textbf{Soporte a decisiones:} priorizar buques, zonas y ventanas temporales que requieren atención, entregando listas y visualizaciones accionables para autoridades y operadores.
+  \item \textbf{Escalabilidad y reproducibilidad:} estandarizar el pipeline en Google Cloud (Storage, DataProc, BigQuery, Cloud Functions) para procesar volúmenes elevados con costos y tiempos controlados.
+\end{itemize}
+
+\vspace{0.2cm}
+\noindent\textbf{Usuarios objetivo y decisiones habilitadas.}
+\begin{itemize}
+  \item \textbf{Autoridades marítimas/guardacostas:} focalización de patrullajes y verificación de eventos inusuales por zona-tiempo-buque.
+  \item \textbf{Navieras y operadores de flota:} supervisión de cumplimiento operativo, eficiencia de rutas y detección de riesgos operativos.
+  \item \textbf{Aseguradoras y analistas de riesgo:} evidencia cuantitativa para evaluación de siniestralidad y \textit{pricing} técnico.
+  \item \textbf{Investigación/medio marino:} análisis de patrones de movilidad y su interacción con áreas sensibles.
+\end{itemize}
+
+\vspace{0.2cm}
+\noindent\textbf{Casos de uso cubiertos en el \textit{dashboard}.} Cada módulo se respalda con consultas SQL parametrizables en BigQuery:
+\begin{itemize}
+  \item \textbf{Calado anómalo} (\emph{per buque y tipo}): cálculo de \emph{z-score} sobre el calado medio por MMSI dentro de su categoría, para resaltar posibles inconsistencias operativas o de reporte.
+  \item \textbf{Cambios de dirección bruscos} (\emph{virajes}): detección de deltas de rumbo (\texttt{COG}) sobre series temporales por MMSI, agregados por \texttt{geohash9}, con umbrales configurables de severidad.
+  \item \textbf{Velocidades inusuales}: comparación del \textit{máximo} de \texttt{SOG} contra percentiles de referencia por buque/tipo para evidenciar excesos.
+  \item \textbf{Variabilidad de velocidad y rumbo}: \texttt{STDDEV} y \texttt{AVG} de \texttt{SOG}/\texttt{COG} por tipo de embarcación como indicador de estabilidad operacional.
+  \item \textbf{Correlaciones estructurales}: relaciones \texttt{Length–Width} (eslora–manga) por clase de buque y correlaciones entre métricas operativas (p.ej., \texttt{SOG} vs. \texttt{COG}) con filtros de tamaño muestral.
+  \item \textbf{Resumen de estados de navegación}: conteos, embarcaciones únicas y promedios (\texttt{SOG}, calado) por \texttt{NavStatusName}.
+  \item \textbf{Patrones semanales}: velocidad promedio y estado de navegación más frecuente por día de la semana y tipo de buque.
+  \item \textbf{Ubicación y trazas recientes} (\texttt{geohash9}): listados y mapas de últimas posiciones por filtros de fecha, tipo de buque o MMSI.
+  \item \textbf{Detección de anomalías temporales con ML}: entrenamiento y consulta de modelos \texttt{ARIMA\_PLUS} por serie (\texttt{geohash9}, \texttt{VesselTypeName} o \texttt{MMSI}) para marcar valores atípicos con umbrales de probabilidad ajustables.
+\end{itemize}
+
+\vspace{0.2cm}
+\noindent\textbf{Entradas, procesamiento y salidas.}
+\begin{itemize}
+  \item \textbf{Entradas:} archivos AIS 2024 (NOAA) descargados y versionados en GCS (\textit{raw}/\textit{curated}), con partición temporal.
+  \item \textbf{Procesamiento:} DataProc (Spark) para descompresión, partición y normalización; BigQuery para \textit{modelado analítico}, agregaciones y ML.
+  \item \textbf{Salidas:} tablas refinadas y \textit{views} listas para consumo, modelos ML en \texttt{dataset} dedicado y un \textit{dashboard} Streamlit con mapas, tendencias y rankings exportables.
+\end{itemize}
+
+\vspace{0.2cm}
+\newpage
+\noindent\textbf{Alcance (in/out-of-scope).}
+\begin{itemize}
+  \item \textbf{Incluye:} análisis \textit{batch}, filtros por ventana temporal y región, métricas descriptivas, detección de anomalías no supervisada (estadística y ARIMA\_PLUS), visualizaciones interactivas y \textit{ranking} de eventos/buques.
+  \item \textbf{No incluye (versión actual):} ingesta \textit{streaming} tiempo real, orquestación \textit{event-driven}, \textit{backfills} automáticos de esquemas, clasificación supervisada de ilícitos, reconstrucción de trayectorias de alta fidelidad ni generación de alertas operativas en caliente.
+\end{itemize}
+
+\vspace{0.2cm}
+\noindent\textbf{Supuestos y restricciones.}
+\begin{itemize}
+  \item Calidad y cobertura del AIS dependen de la fuente; pueden existir vacíos, duplicados o reportes erróneos.
+  \item El desempeño está condicionado por la configuración del clúster DataProc y los límites/cuotas de BigQuery; se privilegia costo-eficiencia sobre latencia.
+  \item La zonificación espacial usa \texttt{geohash9} como índice geoespacial operacional.
+\end{itemize}
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Revisión y uso de datos}
-\subsection{Orígenes y control de datos} % REVISIÓN GUILLÉN
+\subsection{Orígenes y control de datos}
 
 Los datos utilizados provienen del portal oficial de la NOAA (\url{https://coast.noaa.gov/htdata/CMSP/AISDataHandler/2024/index.html}), el cual publica archivos comprimidos (.zip) con los mensajes AIS recolectados a lo largo del año 2024. 
 Para garantizar la trazabilidad y el control de los datos, se desarrolló un script en Python (\texttt{scrapper.py}) que automatiza la descarga de todos los archivos disponibles, verificando duplicados mediante el tamaño de los ficheros y evitando descargas innecesarias. 
 De esta manera se asegura que la totalidad de los datos originales publicados por la NOAA sean capturados sin alteración.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\subsection{Preparación de datos} % REVISIÓN GUILLÉN
+\subsection{Preparación de datos}
 En esta sección se describe el \textbf{qué} produce la preparación de datos (entradas, salidas y \emph{esquema}); la orquestación y operación del pipeline (el \textbf{cómo}) se documenta en la Sección~\ref{sec:metodologia}.
 
 La preparación de los datos comienza en una máquina virtual de Google Compute Engine, donde se ejecuta el script de \textit{scraping}. Este proceso descarga en paralelo (con \textit{threads}) los archivos \texttt{.zip} hacia un directorio local (\texttt{ais\_2024}) y posteriormente los traslada a Google Cloud Storage en la capa \textbf{raw}.\\
 
-Dado el objetivo de tener un conjunto uniforme, trazable y listo para análisis, con: (i) esquema estandarizado, (ii) claves y derivadas temporales consistentes, (iii) coordenadas y velocidades normalizadas, y (iv) datos particionados por \texttt{ym} (AAAA-MM).
+Dado el objetivo de tener un conjunto uniforme, trazable y listo para análisis, con: (i) esquema estandarizado, (ii) claves y derivadas temporales, (iii) coordenadas y velocidades normalizadas, y (iv) datos particionados por \texttt{ym} (AAAA-MM).
 
 \paragraph{Entradas $\rightarrow$ salidas por etapa y la salida de cada una.}
 \begin{enumerate}
@@ -168,7 +226,7 @@ El Cuadro~\ref{tab:curated_schema} presenta los campos principales que expone la
 
 Una vez procesado, el resultado de este pipeline se publica en BigQuery como tabla particionada por \texttt{ym}, optimizada para consulta y consumo por el \textit{dashboard}. Los detalles de automatización de creación/carga (Cloud Function, idempotencia y autodetección de esquema) se abordan en la Sección~\ref{sec:metodologia}.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\subsection{Limpieza y tratamiento de datos} % REVISIÓN GUILLÉN 
+\subsection{Limpieza y tratamiento de datos} 
 \label{sec:cleaning}
 
 En esta sección se describen de manera detallada las transformaciones y criterios aplicados para convertir los datos AIS en una capa \textbf{curated} funcional para el análisis. Se listan los pasos con su \emph{porqué} operativo o estadístico.
@@ -220,12 +278,73 @@ En esta sección se describen de manera detallada las transformaciones y criteri
   \item \textbf{Validación de conteos}: en \textit{raw}, se comparan conteos diarios (CSV vs Parquet) y se aborta si no coinciden; en \textit{curated}, se escriben marcadores de éxito por partición (\texttt{\_markers/ym=.../\_SUCCESS}) para reanudación y ejecución incremental sin sobrescribir trabajo correcto.
 \end{itemize}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\subsection{Integridad de los datos} % TODO: GUILLÉN
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\subsection{Limitaciones de los datos} % TODO: GUILLÉN
+\subsection{Limitaciones de los datos}
+\label{sec:limitaciones-datos}
+
+\vspace{0.2cm}
+\noindent\textbf{Limitaciones de origen y cobertura.}
+\begin{itemize}
+  \item \textbf{Cobertura heterogénea:} la recepción varía por densidad de estaciones y condiciones atmosféricas; en zonas costeras y puertos existe mejor cobertura que en mar abierto.
+  \item \textbf{Congestión y pérdida de mensajes:} en áreas de alto tráfico se producen colisiones de ranuras/transmisiones y \emph{dropouts}; los conteos absolutos pueden estar subestimados.
+  \item \textbf{Latencia y vacíos temporales:} hay periodos con reportes ausentes o irregulares por buque; no deben interpretarse como inmovilidad o “apagado” sin evidencia adicional.
+\end{itemize}
+
+\vspace{0.1cm}
+\noindent\textbf{Limitaciones espaciotemporales y cinemáticas.}
+\begin{itemize}
+  \item \textbf{Posición y tiempo:} \texttt{BaseDateTime} puede no estar perfectamente sincronizado; posiciones pueden presentar \emph{jitter} o saltos por errores GNSS.
+  \item \textbf{Velocidad y rumbos:} \texttt{SOG}/\texttt{COG} contienen ruido y picos espurios; \texttt{Heading=511} indica “no disponible” y se trata como nulo.
+\end{itemize}
+
+\vspace{0.1cm}
+\noindent\textbf{Sesgos analíticos y de modelado.}
+
+\vspace{0.2cm}
+\noindent\textbf{Implicaciones para la interpretación.}
+\begin{itemize}
+  \item \textbf{Anomalía $\neq$ ilícito:} una alerta es un \emph{candidato a revisión}, no evidencia de conducta indebida por sí misma.
+  \item \textbf{Comparaciones geográficas:} los conteos no son estrictamente comparables entre regiones con distinta cobertura; preferir tasas relativas o métricas normalizadas.
+  \item \textbf{Temporalidad:} el análisis es \textit{batch}; el \textit{dashboard} refleja el último corte procesado, no tiempo real.
+\end{itemize}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Integridad de los datos}
+\label{sec:integridad}
+
+La integridad se asegura con \textbf{controles preventivos y detectivos} desde la ingesta hasta el consumo. Objetivos: (i) preservar \emph{fidelidad} a la fuente (NOAA), (ii) garantizar \emph{validez/consistencia} de esquema y valores, (iii) habilitar \emph{trazabilidad} e \emph{idempotencia}, y (iv) exponer \emph{métricas de calidad} operables.
+
+\vspace{0.2cm}
+\noindent\textbf{Principios y dimensiones.}
+\begin{itemize}
+  \item \textbf{Completitud:} cobertura esperada por periodo (\emph{ym}).
+  \item \textbf{Unicidad:} clave \texttt{(MMSI, BaseDateTime)} sin duplicados.
+  \item \textbf{Validez:} rangos físicos plausibles (LAT/LON, SOG, COG, Length/Width, Draft).
+  \item \textbf{Consistencia:} Catálogos coherentes.
+  \item \textbf{Actualidad:} disponibilidad oportuna en BigQuery.
+  \item \textbf{Trazabilidad:} \texttt{\_source\_file} y \texttt{\_ingest\_ts}.
+\end{itemize}
+
+\vspace{0.2cm}
+\noindent\textbf{Controles por etapa.}
+\begin{itemize}
+  \item \textbf{Ingesta (GCE $\rightarrow$ GCS/raw):} detección de duplicados por nombre/tamaño; estructura \texttt{raw/ym=AAAA-MM/}.
+  \item \textbf{Estandarización (DataProc):} normalización (COG/Heading mod 360, SOG cap, LAT/LON recorte), desdup \texttt{(MMSI, BaseDateTime)}, derivadas y \texttt{geohash9}.
+  \item \textbf{Carga analítica (CF + BigQuery):} partición por \texttt{ym}, marcadores de \textit{SUCCESS} e idempotencia.
+\end{itemize}
+
+\noindent\textbf{Linaje, reproducibilidad e idempotencia.}
+\begin{itemize}
+  \item \textbf{Linaje:} cada fila conserva archivo de origen y timestamp de ingesta.
+  \item \textbf{Reproducibilidad:} transformaciones declarativas; particiones \texttt{ym} inmutables tras \textit{SUCCESS}.
+  \item \textbf{Idempotencia:} re-ejecuciones no duplican por desdup y \emph{write mode} controlado.
+\end{itemize}
+
+\vspace{0.2cm}
+\noindent\textbf{Nota.} El AIS puede contener omisiones o errores de origen; se prioriza evitar falsos positivos de integridad sin perder señales útiles para anomalías.
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Proceso de desarrollo}
-\subsection{Metodología} % REVISIÓN GUILLÉN 
+\subsection{Metodología} 
 \label{sec:metodologia}
 
 Esta sección cubre el \textbf{cómo} se ejecuta y opera el pipeline (orquestación, confiabilidad, despliegue y costos); las reglas de transformación y el esquema se tratan en las Secciones~\ref{sec:cleaning} y \ref{tab:curated_schema}.
@@ -262,12 +381,157 @@ La capacidad de cómputo y la configuración actual del clúster es:
 \paragraph{Optimización y diferenciador.}
 La configuración \emph{high-memory} actual mitiga la restricción operativa de procesar estrictamente mes a mes: ahora es posible ejecutar ventanas de \emph{series de meses} más amplias con menor probabilidad de \textit{spills}/OOM y menos corridas totales. No modifica la arquitectura, pero sí incrementa la capacidad efectiva del pipeline y mejora el tiempo de pared global.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\subsection{Pruebas} % TODO: GUILLÉN
+\subsection{Pruebas}\label{sec:tests}
+\noindent En esta sección se documenta la \textbf{validación técnica del pipeline} (calidad de datos y comportamiento del sistema). Los objetivos de prueba fueron: (i) verificar que la ingesta y transformación preservan conteos y trazabilidad; (ii) garantizar que las reglas de limpieza y normalización operan según lo diseñado; (iii) asegurar idempotencia y reanudación segura por partición; y (iv) dejar evidencia auditable vía \emph{logs} y marcadores de éxito.
+
+\paragraph{Validación de ingesta (\textit{raw} $\rightarrow$ Parquet).}
+\begin{itemize}
+  \item \textbf{Conteos por día y por archivo:} para cada lote descargado se compararon los registros \texttt{CSV} con los generados en Parquet (mismo día \texttt{ymd}). Si los conteos no coincidían, el job abortaba y registraba la discrepancia.
+  \item \textbf{Trazabilidad:} se propagaron metadatos de origen (\texttt{\_source\_file}, \texttt{\_ingest\_ts}) y se validó su presencia en la salida \textit{raw} para auditoría.
+  \item \textbf{Detección de duplicados en origen:} se verificó tamaño y nombre de archivo antes de descargar (evitando descargas repetidas) y se consolidó en GCS con estructura temporal por \texttt{ym}.
+\end{itemize}
+
+\paragraph{Revisión de \textit{outliers} y reglas de limpieza.}
+\begin{itemize}
+  \item \textbf{Velocidad:} se acotó \texttt{SOG} al rango físico \([0,70]\) nudos; se midió el \% de registros recortados.
+  \item \textbf{Coordenadas:} recorte de \texttt{LAT} a \([-90,90]\) y envoltura de \texttt{LON} a \([-180,180]\); descarte de coordenadas nulas tras la corrección. Se verificó redondeo a 5 decimales de forma consistente.
+  \item \textbf{Rumbos/estados:} normalización módulo 360° de \texttt{COG/Heading}; \texttt{Heading=511} marcado como nulo. Mapas de \texttt{NavStatusInt/Name} con códigos fuera de catálogo etiquetados como \emph{Unknown/Not reported}.
+\end{itemize}
+
+\paragraph{Consistencia temporal.}
+\begin{itemize}
+  \item \textbf{UTC canónico:} \texttt{BaseDateTime} se parseó a \texttt{TIMESTAMP} en UTC y, a partir de éste, se derivaron \texttt{date}, \texttt{hour}, \texttt{week}, \texttt{month}, \texttt{quarter} y \texttt{ym}.
+  \item \textbf{Integridad por ventana:} para cortes mensuales, se revisó que no existan \emph{leaks} de registros fuera del \texttt{ym} correspondiente y que los límites de mes sean consistentes.
+\end{itemize}
+
+\paragraph{Idempotencia y reanudación segura.}
+\begin{itemize}
+  \item \textbf{Clave de desduplicación:} \(\texttt{MMSI},\texttt{BaseDateTime}\) como clave compuesta para garantizar series temporales sin duplicados en la capa \textit{curated}.
+  \item \textbf{Marcadores de éxito por partición:} escritura de \texttt{\_markers/ym=.../\_SUCCESS} al final de cada partición procesada. Si el job se relanza, sólo procesa particiones sin marcador, evitando sobrescrituras de trabajo correcto.
+  \item \textbf{Relanzamiento seguro:} pruebas de re-ejecución completa y parcial (fallo inducido a mitad de mes) confirmaron que no se generan duplicados ni particiones corruptas.
+\end{itemize}
+
+\paragraph{Observabilidad y evidencias.}
+\begin{itemize}
+  \item \textbf{Logs de DataProc/Spark:} conteos por etapa, tiempos de ejecución y tamaños de salida por \texttt{ym}; \emph{speculation} y \emph{retries} habilitados para robustez ante \emph{stragglers}.
+  \item \textbf{Métricas de control:} número de archivos procesados, \% de registros filtrados por reglas (SOG fuera de rango, coordenadas inválidas), tasa de duplicados removidos y tiempo total por corrida.
+\end{itemize}
+
+\begin{table}[H]
+  \centering
+  \caption{Resumen de verificaciones de calidad del pipeline.}
+  \scriptsize
+  \begin{tabular}{@{}p{4cm}p{5.5cm}p{4.5cm}@{}}
+    \toprule
+    \textbf{Chequeo} & \textbf{Criterio de aceptación} & \textbf{Evidencia} \\
+    \midrule
+    Conteos raw vs Parquet & Diferencia absoluta = 0 por \texttt{ymd} & Log de etapa e informe de conteos \\
+    Rango de SOG & \([0,70]\) nudos tras limpieza & Percentiles antes/después \\
+    Coordenadas válidas & LAT/LON dentro de dominio, sin nulos & Reporte de recortes/descartes \\
+    UTC y derivadas temporales & \texttt{hour} en \(0\,\ldots\,23\); \texttt{ym} correcto \\
+    Idempotencia por partición & Re-ejecución sin duplicados & Presencia de \texttt{\_SUCCESS} y diffs nulos \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Validación previa en BigQuery.}
+Antes de integrar los resultados en la aplicación, se realizaron pruebas exploratorias en BigQuery para comprobar la validez de los \textit{queries}, el esquema y la consistencia de la información retornada (rangos temporales, conteos y estadísticos básicos). Posteriormente, en la etapa de entrenamiento y evaluación de modelos de ML, los \textit{queries} involucrados y los resultados producidos fueron verificados de igual manera, garantizando la funcionalidad para integrarlo en el dashboard. Como referencia visual, véanse las Figuras~\ref{fig:queries-bq} y~\ref{fig:modelos-bq}.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.6\linewidth]{figures/QuerysBQ.png}
+  \caption{Pruebas y validaciones de \textit{queries} en BigQuery (comprobación de periodos, filtros y métricas).}
+  \label{fig:queries-bq}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.6\linewidth]{figures/ModelosBQ.png}
+  \caption{Verificación de entrenamiento/evaluación de modelos en BigQuery y revisión de resultados.}
+  \label{fig:modelos-bq}
+\end{figure}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{Resultados y conclusiones} % TODO: GUILLÉN
+\section{Resultados y conclusiones}
+
+Se desarrolló un \textit{dashboard} interactivo que ejecuta las consultas validadas sobre los datos AIS y expone una superficie de entrenamiento y predicción basada en \texttt{BigQuery ML (ARIMA\_PLUS)}. El tablero permite explorar coherencias/incoherencias de los mensajes, correlaciones geométricas y de desempeño, así como detectar comportamientos anómalos por serie y periodo. En conjunto, las visualizaciones y la interfaz de ML habilitan un flujo completo: (i) análisis exploratorio y verificación de datos; (ii) entrenamiento del modelo; (iii) evaluación de anomalías y revisión de resultados.
+\newpage
+\paragraph{Exploración y métricas.}
+Los módulos de exploración incluyen: (a) correlación \emph{Eslora–Manga} por clase de buque, útil para detectar casos geométricamente atípicos; (b) \emph{Calado anómalo} a partir de \textit{z-score} por embarcación; (c) \emph{Cambios de dirección} por encima de un umbral angular configurable, con soporte de filtro geográfico; y (d) variabilidad de velocidad y rumbo, más vistas complementarias (velocidad por día de semana, estados de navegación frecuentes). Estas vistas, además de presentar tablas paginadas, ofrecen gráficas de barras y de dispersión que facilitan identificar extremos y patrones.
+
+\paragraph{Entrenamiento y detección de anomalías.}
+La ventana de ML permite seleccionar métrica (\textit{count} o \textit{speed}), frecuencia (\texttt{HOURLY/DAILY}) e identificador de serie (\texttt{geohash9}, \texttt{VesselTypeName} o \texttt{MMSI}), ejecutar el entrenamiento y, posteriormente, lanzar la detección de anomalías sobre el rango de evaluación. Los resultados se listan en tabla y se visualizan con gráficos (barras por serie y dispersión temporal), con control del umbral de probabilidad para ajustar sensibilidad/especificidad. Este flujo fue verificado con consultas de prueba previas, asegurando que los \textit{queries} de entrenamiento y predicción devuelven esquemas y valores consistentes antes de su integración final.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.6\linewidth]{figures/EsloraManga.png}
+  \caption{Correlación Eslora–Manga por clase de buque.}
+  \label{fig:eslora-manga}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.6\linewidth]{figures/CambiosDireccion.png}
+  \caption{Eventos de cambio de dirección por encima de un umbral angular.}
+  \label{fig:cambios-direccion}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.6\linewidth]{figures/DesvVelRumbo.png}
+  \caption{Variabilidad de velocidad y rumbo por tipo de buque.}
+  \label{fig:desv-vel-rumbo}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.6\linewidth]{figures/VelPromDiaria.jpeg}
+  \caption{Velocidad promedio por día de la semana (barras apiladas por tipo de buque).}
+  \label{fig:vel-prom-dia}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.6\linewidth]{figures/EstadosDiaSemana.jpeg}
+  \caption{Estado de navegación más frecuente por día de la semana.}
+  \label{fig:estado-dia-semana}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.6\linewidth]{figures/TendenciaSemanalVel.jpeg}
+  \caption{Tendencia semanal de velocidad por tipo de buque.}
+  \label{fig:tendencia-semanal-vel}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.6\linewidth]{figures/Entrenamiento.png}
+  \caption{Ventana de entrenamiento y detección de anomalías con \texttt{BigQuery ML}.}
+  \label{fig:entrenamiento}
+\end{figure}
+
+\subsection{Conclusión general}
+
+Se implementó un flujo \emph{end-to-end} en Google Cloud que transforma datos masivos AIS en análisis operables y detección de anomalías: ingesta y preparación (GCE $\rightarrow$ GCS $\rightarrow$ DataProc/Spark), explotación analítica y de ML en BigQuery, y un \textit{dashboard} en Streamlit con ventana de entrenamiento y predicción mediante \texttt{BigQuery ML (ARIMA\_PLUS)}.
+
+\paragraph{Aportaciones principales.}
+\begin{itemize}
+  \item \textbf{Pipeline reproducible y escalable} con capas \textit{raw/curated}, particionado temporal e idempotencia, optimizado para costos y tiempos de consulta.
+  \item \textbf{Analítica descriptiva accionable} (patrones semanales de velocidad y estados, coherencias geométricas y de desempeño) para priorizar zonas, buques y ventanas temporales.
+  \item \textbf{Detección de anomalías temporal} basada en series (ARIMA\_PLUS) con umbral configurable e integración directa en la interfaz para análisis y depuración de resultados.
+\end{itemize}
+
+\paragraph{Lecciones y limitaciones.}
+\begin{itemize}
+  \item La \textbf{calidad y cobertura} del AIS condicionan los hallazgos; se requieren normalizaciones y validaciones previas en SQL.
+  \item La versión actual opera en \textit{batch} con disparadores manuales/programados y no incluye tiempo real.
+  \item \textbf{Control de costos (GCS/BigQuery):} el volumen y la granularidad elevan costos de almacenamiento y consulta; se mitigarían con presupuestos/alertas de gasto.
+\end{itemize}
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{Código utilizado} % REVISIÓN GUILLÉN 
+\section{Código utilizado} 
 \subsection{Link al repositorio con código fuente y salidas correspondientes}
 \url{https://github.com/enriquegomeztagle/MCD-BigData-SmartMaritimeTrafficMonitoring-FinalProject}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
